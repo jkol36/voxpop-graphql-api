@@ -1,0 +1,64 @@
+version: 2.1
+
+jobs:
+  build:
+    docker:
+      - image: circleci/node:8.10.0-stretch
+
+    working_directory: ~/hhsb
+    steps:
+      - checkout
+      - setup_remote_docker
+      # Download and cache dependencies
+      - restore_cache:
+          keys:
+          - v1-{{ .Branch }}-dependencies-{{ checksum "package.json" }}
+
+          # fallback to using the latest cache if no exact match is found
+          - v1-{{ .Branch }}-dependencies-
+      - run:
+          name: Install dependecies
+          command: npm install
+
+      - save_cache:
+          paths:
+          - node_modules
+          key: v1-{{ .Branch }}-dependencies-{{ checksum "package.json" }}
+
+      - run:
+          name: Build babel project
+          command: npm run build
+
+      # Build & test the application image
+      - run:
+          name: Build docker image
+          command: |
+            docker build --rm=false -t hhsbgraphql-express .
+      - run:
+          name: Test docker image
+          command: |
+            docker images
+            docker run -d --restart=always --name hhsbgraphql-express -p 3000:3000 -p 465:465 -p 8080:8080 hhsbgraphql-express:latest
+            sleep 30
+            docker exec -it hhsbgraphql-express pm2 list
+            chmod +x docker_test.sh && ./docker_test.sh
+orbs:
+  aws-ecr: circleci/aws-ecr@4.0.1
+  aws-ecs: circleci/aws-ecs@0.0.8
+workflows:
+  version: 2
+  build-and-deploy:
+    jobs:
+      - build
+      - aws-ecr/build_and_push_image:
+          requires:
+            - build
+          repo: "${AWS_RESOURCE_NAME_PREFIX}"
+          tag: "${CIRCLE_SHA1}"
+      - aws-ecs/deploy-service-update:
+          requires:
+            - aws-ecr/build_and_push_image
+          aws-region: ${AWS_DEFAULT_REGION}
+          family: "${AWS_RESOURCE_NAME_PREFIX}-service"
+          cluster-name: "${AWS_RESOURCE_NAME_PREFIX}-cluster"
+          container-image-name-updates: "container=${AWS_RESOURCE_NAME_PREFIX}-service,tag=${CIRCLE_SHA1}"

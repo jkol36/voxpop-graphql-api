@@ -1,0 +1,75 @@
+version: 2
+jobs:
+  deploy-dev:
+    machine:
+      node:
+        version: 8.9.2
+    working_directory: /tmp/hhsb
+    steps:
+      - checkout
+      - run: npm install
+      - run: npm run build
+      - run: chmod +x deploy.sh && ./deploy.sh prod
+  test-dev:
+    machine:
+      node:
+        version: 8.9.2
+    working_directory: /tmp/hhsb
+    steps:
+      - checkout
+      - run: npm install
+      - run:
+          name: build graphql server
+          command: npm run build
+          background: true
+      # - run: npm test
+  deploy-prod:
+    machine:
+      node:
+        version: 8.9.2
+    working_directory: /tmp/hhsb
+    steps:
+      - checkout
+      - run: chmod +x deploy.sh && ./deploy.sh prod
+  test-prod:
+    machine:
+      node:
+        version: 8.9.2
+    working_directory: /tmp/hhsb
+    steps:
+      - checkout
+      - run: npm install
+      - run:
+          name: build graphql server
+          command: npm run build
+          background: true
+      # - run: npm test
+workflows:
+  version: 2
+  test-and-deploy:
+    jobs:
+      - test-dev:
+          filters:
+            branches:
+              only:
+                - dev
+      - deploy-dev:
+          requires:
+            - test-dev
+          filters:
+            branches:
+              only:
+               - dev
+      - test-prod:
+          filters:
+            branches:
+              only:
+                - master
+      - deploy-prod:
+          requires:
+            - test-prod
+          filters:
+            branches:
+              only:
+               - master
+
